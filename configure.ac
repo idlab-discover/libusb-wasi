@@ -83,6 +83,11 @@ case $host in
 	backend=haiku
 	platform=posix
 	;;
+*-wasi*)
+  AC_MSG_RESULT([WASI])
+  backend=wasi
+  platform=posix
+  ;;
 wasm*-emscripten)
 	AC_MSG_RESULT([Emscripten])
 	backend=emscripten
@@ -149,7 +154,7 @@ esac
 if test "x$platform" = xposix; then
 	AC_DEFINE([PLATFORM_POSIX], [1], [Define to 1 if compiling for a POSIX platform.])
 	AC_CHECK_TYPES([nfds_t], [], [], [[#include <poll.h>]])
-	if test "x$backend" != xemscripten; then
+	if test "x$backend" != xemscripten -a "x$backend" != xwasi; then
 		# pipe2 is detected as present on Emscripten, but it isn't actually ported and always
 		# returns an error. https://github.com/emscripten-core/emscripten/issues/14824
 		AC_CHECK_FUNCS([pipe2])
@@ -397,6 +402,7 @@ AM_CONDITIONAL([OS_EMSCRIPTEN], [test "x$backend" = xemscripten])
 AM_CONDITIONAL([PLATFORM_POSIX], [test "x$platform" = xposix])
 AM_CONDITIONAL([PLATFORM_WINDOWS], [test "x$platform" = xwindows])
 AM_CONDITIONAL([USE_UDEV], [test "x$use_udev" = xyes])
+AM_CONDITIONAL([OS_WASI], [test "x$backend" = xwasi])
 
 dnl The -Wcast-function-type warning causes a flurry of warnings when compiling
 dnl Windows with GCC 8 or later because of dynamically loaded functions

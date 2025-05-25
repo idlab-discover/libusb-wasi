@@ -22,6 +22,7 @@
  */
 
 #include "libusbi.h"
+#include "stdio.h"
 
 /**
  * \page libusb_io Synchronous and asynchronous device I/O
@@ -1160,7 +1161,7 @@ printf("completed!\n");
 int usbi_io_init(struct libusb_context *ctx)
 {
 	int r;
-
+	printf("io init 1\n");
 	usbi_mutex_init(&ctx->flying_transfers_lock);
 	usbi_mutex_init(&ctx->events_lock);
 	usbi_mutex_init(&ctx->event_waiters_lock);
@@ -1172,16 +1173,22 @@ int usbi_io_init(struct libusb_context *ctx)
 	list_init(&ctx->removed_event_sources);
 	list_init(&ctx->hotplug_msgs);
 	list_init(&ctx->completed_transfers);
+	printf("io init 2\n");
 
 	r = usbi_create_event(&ctx->event);
 	if (r < 0)
 		goto err;
 
+	printf("io init 3\n");
+
 	r = usbi_add_event_source(ctx, USBI_EVENT_OS_HANDLE(&ctx->event), USBI_EVENT_POLL_EVENTS);
 	if (r < 0)
 		goto err_destroy_event;
 
+	printf("io init 4\n");
+
 #ifdef HAVE_OS_TIMER
+	printf("io init 5\n");
 	r = usbi_create_timer(&ctx->timer);
 	if (r == 0) {
 		usbi_dbg(ctx, "using timer for timeouts");
@@ -1197,12 +1204,15 @@ int usbi_io_init(struct libusb_context *ctx)
 
 #ifdef HAVE_OS_TIMER
 err_destroy_timer:
+	printf("io init 6\n");
 	usbi_destroy_timer(&ctx->timer);
 	usbi_remove_event_source(ctx, USBI_EVENT_OS_HANDLE(&ctx->event));
 #endif
 err_destroy_event:
+	printf("io init 7\n");
 	usbi_destroy_event(&ctx->event);
 err:
+	printf("io init 8\n");
 	usbi_mutex_destroy(&ctx->flying_transfers_lock);
 	usbi_mutex_destroy(&ctx->events_lock);
 	usbi_mutex_destroy(&ctx->event_waiters_lock);
@@ -1214,10 +1224,13 @@ err:
 
 static void cleanup_removed_event_sources(struct libusb_context *ctx)
 {
+	printf("Cleaning up removed event sources -1\n");
 	struct usbi_event_source *ievent_source, *tmp;
-
+	printf("Cleaning up removed event sources 0\n");
 	for_each_removed_event_source_safe(ctx, ievent_source, tmp) {
+		printf("Cleaning up removed event sources 0.5\n");
 		list_del(&ievent_source->list);
+		printf("Cleaning up removed event sources 0.75\n");
 		free(ievent_source);
 	}
 }
@@ -1231,15 +1244,25 @@ void usbi_io_exit(struct libusb_context *ctx)
 	}
 #endif
 	usbi_remove_event_source(ctx, USBI_EVENT_OS_HANDLE(&ctx->event));
+	printf("Cleaning up removed event sources 1\n");
 	usbi_destroy_event(&ctx->event);
+	printf("Cleaning up removed event sources 2\n");
 	usbi_mutex_destroy(&ctx->flying_transfers_lock);
+	printf("Cleaning up removed event sources 2.5\n");
 	usbi_mutex_destroy(&ctx->events_lock);
+	printf("Cleaning up removed event sources 2.75\n");
 	usbi_mutex_destroy(&ctx->event_waiters_lock);
+	printf("Cleaning up removed event sources 2.8\n");
 	usbi_cond_destroy(&ctx->event_waiters_cond);
+	printf("Cleaning up removed event sources 2.9\n");
 	usbi_mutex_destroy(&ctx->event_data_lock);
+	printf("Cleaning up removed event sources 3\n");
 	usbi_tls_key_delete(ctx->event_handling_key);
+	printf("Cleaning up removed event sources 3\n");
 	cleanup_removed_event_sources(ctx);
+	printf("Cleaning up removed event sources 3.5\n");
 	free(ctx->event_data);
+	printf("Cleaning up removed event sources 4\n");
 }
 
 static void calculate_timeout(struct usbi_transfer *itransfer)

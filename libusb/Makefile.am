@@ -5,8 +5,7 @@ AM_CXXFLAGS += -fvisibility=hidden $(THREAD_CFLAGS)
 
 lib_LTLIBRARIES = libusb-1.0.la
 
-POSIX_PLATFORM_SRC = os/events_posix.h os/events_posix.c \
-		     os/threads_posix.h os/threads_posix.c
+POSIX_PLATFORM_SRC = ""
 WINDOWS_PLATFORM_SRC = os/events_windows.h os/events_windows.c \
 		       os/threads_windows.h os/threads_windows.c
 
@@ -16,6 +15,7 @@ else
 PLATFORM_SRC = $(WINDOWS_PLATFORM_SRC)
 endif
 
+OS_WASI_SRC = os/wasi_usb.c os/wasi_usb.h os/cguest.c
 OS_DARWIN_SRC = os/darwin_usb.h os/darwin_usb.c
 OS_HAIKU_SRC = os/haiku_usb.h os/haiku_usb_backend.cpp \
 	       os/haiku_pollfs.cpp os/haiku_usb_raw.h os/haiku_usb_raw.cpp
@@ -56,6 +56,11 @@ noinst_LTLIBRARIES += libusb_emscripten.la
 libusb_emscripten_la_SOURCES = $(OS_EMSCRIPTEN_SRC)
 AM_CXXFLAGS += -std=c++20
 libusb_1_0_la_LIBADD = libusb_emscripten.la
+endif
+
+if OS_WASI
+OS_SRC = $(OS_WASI_SRC)
+PLATFORM_SRC =  
 endif
 
 if OS_NETBSD
