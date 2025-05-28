@@ -12,110 +12,6 @@
 #include "wasi_usb.h"
 #include "cguest.h"
 
-// Helper function to issue a control transfer to get device descriptor
-static int get_device_descriptor(component_usb_device_borrow_usb_device_t device, 
-                                struct libusb_device_descriptor *descriptor) {
-    // We need to open the device to perform control transfers
-    component_usb_device_own_device_handle_t handle;
-    component_usb_device_libusb_error_t err;
-
-    if (!component_usb_device_method_usb_device_open(device, &handle, &err)) {
-        return libusb_error_from_wasi(err);
-    }
-
-    // Borrow the handle for control transfer
-    component_usb_device_borrow_device_handle_t borrowed_handle = 
-        component_usb_device_borrow_device_handle(handle);
-
-    // Create a transfer to get the device descriptor
-    component_usb_device_transfer_setup_t setup = {
-        .bm_request_type = 0x80,  // IN | standard | device
-        .b_request = 0x06,        // GET_DESCRIPTOR
-        .w_value = 0x0100,        // Descriptor type 1 (device)
-        .w_index = 0              // Language ID (not used for device)
-    };
-
-    component_usb_device_transfer_options_t opts = {
-        .endpoint = 0,            // EP-0
-        .timeout_ms = 1000,       // 1 second
-        .stream_id = 0,
-        .iso_packets = 0
-    };
-
-    // Create the transfer
-    component_usb_device_own_transfer_t transfer;
-    if (!component_usb_device_method_device_handle_new_transfer(
-            borrowed_handle, 
-            COMPONENT_USB_TRANSFERS_TRANSFER_TYPE_CONTROL, 
-            &setup, 
-            18,   // Device descriptor is 18 bytes
-            &opts, 
-            &transfer, 
-            &err)) {
-        component_usb_device_method_device_handle_close(borrowed_handle);
-        component_usb_device_device_handle_drop_own(handle);
-        return libusb_error_from_wasi(err);
-    }
-
-    // Submit the transfer with empty data (for IN request)
-    component_usb_transfers_borrow_transfer_t borrowed_transfer = 
-        component_usb_transfers_borrow_transfer(transfer);
-    uint8_t empty_data = 0;
-    cguest_list_u8_t empty_list = { &empty_data, 0 };
-    component_usb_transfers_libusb_error_t submit_err;
-
-    if (!component_usb_transfers_method_transfer_submit_transfer(
-            borrowed_transfer, 
-            &empty_list, 
-            &submit_err)) {
-        component_usb_transfers_transfer_drop_own(transfer);
-        component_usb_device_method_device_handle_close(borrowed_handle);
-        component_usb_device_device_handle_drop_own(handle);
-        return libusb_error_from_wasi(submit_err);
-    }
-
-    // Wait for the transfer to complete
-    cguest_list_u8_t result;
-    component_usb_transfers_libusb_error_t await_err;
-    int ret = LIBUSB_SUCCESS;
-
-    if (!component_usb_transfers_await_transfer(transfer, &result, &await_err)) {
-        ret = libusb_error_from_wasi(await_err);
-    } else if (result.len != 18) {
-        ret = LIBUSB_ERROR_IO;
-    } else {
-        // Parse descriptor fields
-        descriptor->bLength = result.ptr[0];
-        descriptor->bDescriptorType = result.ptr[1];
-        descriptor->bcdUSB = (result.ptr[3] << 8) | result.ptr[2];
-        descriptor->bDeviceClass = result.ptr[4];
-        descriptor->bDeviceSubClass = result.ptr[5];
-        descriptor->bDeviceProtocol = result.ptr[6];
-        descriptor->bMaxPacketSize0 = result.ptr[7];
-        descriptor->idVendor = (result.ptr[9] << 8) | result.ptr[8];
-        descriptor->idProduct = (result.ptr[11] << 8) | result.ptr[10];
-        descriptor->bcdDevice = (result.ptr[13] << 8) | result.ptr[12];
-        descriptor->iManufacturer = result.ptr[14];
-        descriptor->iProduct = result.ptr[15];
-        descriptor->iSerialNumber = result.ptr[16];
-        descriptor->bNumConfigurations = result.ptr[17];
-
-        // Convert descriptor to host endian format
-        usbi_localize_device_descriptor(descriptor);
-
-        // Free the result buffer
-        if (result.ptr) {
-            free(result.ptr);
-        }
-    }
-
-    // Clean up
-    component_usb_device_method_device_handle_close(borrowed_handle);
-    component_usb_device_device_handle_drop_own(handle);
-
-    return ret;
-}
-
 // Map WASI USB error codes to libusb error codes
 int libusb_error_from_wasi(component_usb_device_libusb_error_t error) {
     switch (error) {
@@ -151,20 +47,17 @@ int libusb_error_from_wasi(component_usb_device_libusb_error_t error) {
 
 // Get transfer private data
 static wasi_transfer_priv_t *get_transfer_priv(struct usbi_transfer *itransfer) {
-	printf("Getting transfer private data\n");
-    return usbi_get_transfer_priv(itransfer);
+	    return usbi_get_transfer_priv(itransfer);
 }
 
 // Get device private data
 static wasi_device_priv_t *get_device_priv(struct libusb_device *dev) {
-    printf("Getting device private data\n");
-    return usbi_get_device_priv(dev);
+        return usbi_get_device_priv(dev);
 }
 
 // Get device handle private data
 static wasi_device_handle_priv_t *get_handle_priv(struct libusb_device_handle *handle) {
-    printf("Getting device handle private data\n");
-    return usbi_get_device_handle_priv(handle);
+        return usbi_get_device_handle_priv(handle);
 }
 
 // Platform specific code for threads
@@ -199,12 +92,10 @@ void usbi_clear_event(usbi_event_t *event) {
 // Initialization & teardown
 // ---------------------------------------------------------------------------
 static int wasm_init(struct libusb_context *ctx) {
-    printf("Initializing WASM USB backend\n");
-    // Calling component_usb_device_init from cguest.c
+        // Calling component_usb_device_init from cguest.c
     component_usb_device_libusb_error_t err;
     if (!component_usb_device_init(&err)) {
-        printf("WASM USB backend initialization failed: %d\n", err);
-        return libusb_error_from_wasi(err);
+                return libusb_error_from_wasi(err);
     }
 
     component_usb_usb_hotplug_libusb_error_t hotplug_err;
@@ -213,36 +104,30 @@ static int wasm_init(struct libusb_context *ctx) {
         // Continue anyway, as this is not critical
     }
 
-    printf("WASM USB backend initialized successfully\n");
-    return LIBUSB_SUCCESS;
+        return LIBUSB_SUCCESS;
 }
 
 static void wasm_exit(struct libusb_context *ctx) {
-    printf("Shutting down WASM USB backend\n");
-    // No explicit cleanup needed - WebAssembly component resources are cleaned up automatically
-    printf("WASM USB backend shutdown\n");
-}
+        // No explicit cleanup needed - WebAssembly component resources are cleaned up automatically
+    }
 
 // ---------------------------------------------------------------------------
 // Device discovery
 // ---------------------------------------------------------------------------
 static int wasm_get_device_list(struct libusb_context *ctx, struct discovered_devs **discdevs) {
-    printf("Getting device list in WASM backend\n");
-    component_usb_device_list_own_usb_device_t device_list;
+        component_usb_device_list_tuple3_own_usb_device_device_descriptor_device_location_t device_list;
     component_usb_device_libusb_error_t err;
     int r = 0;
 
-    printf("Enumerating all USB devices on the system\n");
-
+    
     // Call component_usb_device_list_devices from cguest.c to enumerate all devices
     if (!component_usb_device_list_devices(&device_list, &err)) {
-        printf("Failed to enumerate USB devices: %d\n", err);
-        return libusb_error_from_wasi(err);
+                return libusb_error_from_wasi(err);
     }
 
     // Process each device in the list
     for (size_t i = 0; i < device_list.len; i++) {
-        component_usb_device_own_usb_device_t *wasm_device = &device_list.ptr[i];
+        component_usb_device_own_usb_device_t *wasm_device = &device_list.ptr[i].f0;
         component_usb_device_borrow_usb_device_t borrowed_device =
             component_usb_device_borrow_usb_device(*wasm_device);
 
@@ -250,17 +135,14 @@ static int wasm_get_device_list(struct libusb_context *ctx, struct discovered_de
         // We use the device handle as the session ID
         unsigned long session_id = (unsigned long)wasm_device->__handle;
 
-        printf("Found device with session ID: %lu\n", session_id);
-
+        
         // Check if libusb already knows about this device
         struct libusb_device *dev = usbi_get_device_by_session_id(ctx, session_id);
 
         if (dev) {
-            printf("Device with session ID %lu already known\n", session_id);
-        } else {
+                    } else {
             // Create a new libusb_device for this device
-            printf("Allocating new device for session ID %lu\n", session_id);
-            dev = usbi_alloc_device(ctx, session_id);
+                        dev = usbi_alloc_device(ctx, session_id);
             if (!dev) {
                 usbi_err(ctx, "Failed to allocate libusb device");
                 continue;
@@ -275,45 +157,33 @@ static int wasm_get_device_list(struct libusb_context *ctx, struct discovered_de
             struct libusb_device_descriptor descriptor;
             memset(&descriptor, 0, sizeof(descriptor));
 
-            r = get_device_descriptor(borrowed_device, &descriptor);
-            if (r < 0) {
-                printf("Failed to get device descriptor: %d\n", r);
-                libusb_unref_device(dev);
-                continue;
-            }
-
-            // printing the device descriptor for debugging
-			printf("Device Descriptor:\n");
-			printf("  bLength: %d\n", descriptor.bLength);
-			printf("  bDescriptorType: %d\n", descriptor.bDescriptorType);
-			printf("  bcdUSB: %04x\n", descriptor.bcdUSB);
-			printf("  bDeviceClass: %d\n", descriptor.bDeviceClass);
-			printf("  bDeviceSubClass: %d\n", descriptor.bDeviceSubClass);
-			printf("  bDeviceProtocol: %d\n", descriptor.bDeviceProtocol);
-			printf("  bMaxPacketSize0: %d\n", descriptor.bMaxPacketSize0);
-			printf("  idVendor: %04x\n", descriptor.idVendor);
-			printf("  idProduct: %04x\n", descriptor.idProduct);
-			printf("  bcdDevice: %04x\n", descriptor.bcdDevice);
-			printf("  iManufacturer: %d\n", descriptor.iManufacturer);
-			printf("  iProduct: %d\n", descriptor.iProduct);
-			printf("  iSerialNumber: %d\n", descriptor.iSerialNumber);
-			printf("  bNumConfigurations: %d\n", descriptor.bNumConfigurations);
-
-            // Copy the descriptor to the device
+            descriptor.bLength = device_list.ptr[i].f1.length;
+            descriptor.bDescriptorType = device_list.ptr[i].f1.descriptor_type;
+            descriptor.bcdUSB = device_list.ptr[i].f1.usb_version_bcd;
+            descriptor.bDeviceClass = device_list.ptr[i].f1.device_class;
+            descriptor.bDeviceSubClass = device_list.ptr[i].f1.device_subclass;
+            descriptor.bDeviceProtocol = device_list.ptr[i].f1.device_protocol;
+            descriptor.bMaxPacketSize0 = device_list.ptr[i].f1.max_packet_size0;
+            descriptor.idVendor = device_list.ptr[i].f1.vendor_id;
+            descriptor.idProduct = device_list.ptr[i].f1.product_id;
+            descriptor.bcdDevice = device_list.ptr[i].f1.device_version_bcd;
+            descriptor.iManufacturer = device_list.ptr[i].f1.manufacturer_index;
+            descriptor.iProduct = device_list.ptr[i].f1.product_index;
+            descriptor.iSerialNumber = device_list.ptr[i].f1.serial_number_index;
+            descriptor.bNumConfigurations = device_list.ptr[i].f1.num_configurations;
+																																													
+            // set the descriptor to the device
             dev->device_descriptor = descriptor;
 
-            // For WASI, we don't have direct access to bus/port/address info
-            // So we synthesize reasonable values based on device index
-            dev->bus_number = 1;                // All devices on virtual bus 1
-            dev->port_number = (uint8_t)(i + 1); // Port numbers start at 1
-            dev->device_address = (uint8_t)(i + 1); // Device addresses start at 1
-            dev->speed = LIBUSB_SPEED_UNKNOWN;  // We don't know the speed
+            dev->bus_number = device_list.ptr[i].f2.bus_number;                // All devices on virtual bus 1
+            dev->port_number = device_list.ptr[i].f2.port_number;                // Port number is not applicable in WASM
+            dev->device_address = device_list.ptr[i].f2.device_address;  // Device address is assigned by the host
+            dev->speed = device_list.ptr[i].f2.speed; // Speed is determined by the host
 
             // Perform sanity checks on the device
             r = usbi_sanitize_device(dev);
             if (r < 0) {
-                printf("Failed to sanitize device: %d\n", r);
-                libusb_unref_device(dev);
+                                libusb_unref_device(dev);
                 continue;
             }
         }
@@ -344,8 +214,7 @@ static int wasm_get_device_list(struct libusb_context *ctx, struct discovered_de
 // Open / close
 // ---------------------------------------------------------------------------
 static int wasm_open(struct libusb_device_handle *handle) {
-    printf("Opening device handle in WASM backend\n");
-    struct libusb_context *ctx = HANDLE_CTX(handle);
+        struct libusb_context *ctx = HANDLE_CTX(handle);
     struct libusb_device *dev = handle->dev;
     wasi_device_priv_t *dpriv = get_device_priv(dev);
     wasi_device_handle_priv_t *hpriv = get_handle_priv(handle);
@@ -359,8 +228,7 @@ static int wasm_open(struct libusb_device_handle *handle) {
     component_usb_device_libusb_error_t err;
 
     if (!component_usb_device_method_usb_device_open(borrowed_device, &wasm_handle, &err)) {
-        printf("Failed to open USB device: %d\n", err);
-        return libusb_error_from_wasi(err);
+                return libusb_error_from_wasi(err);
     }
 
     // Store the handle
@@ -370,8 +238,7 @@ static int wasm_open(struct libusb_device_handle *handle) {
 }
 
 static void wasm_close(struct libusb_device_handle *handle) {
-    printf("Closing device handle in WASM backend\n");
-    wasi_device_handle_priv_t *hpriv = get_handle_priv(handle);
+        wasi_device_handle_priv_t *hpriv = get_handle_priv(handle);
 
     // Close the device by borrowing it first
     component_usb_device_borrow_device_handle_t borrowed_handle = component_usb_device_borrow_device_handle(hpriv->handle);
@@ -383,30 +250,25 @@ static void wasm_close(struct libusb_device_handle *handle) {
 }
 
 static void wasm_destroy_device(struct libusb_device *dev) {
-    printf("Destroying device in WASM backend\n");
-    // Nothing to do here - resources are managed by the WebAssembly component
+        // Nothing to do here - resources are managed by the WebAssembly component
 }
 
 // ---------------------------------------------------------------------------
 // Descriptor retrieval
 // ---------------------------------------------------------------------------
 static int wasm_get_active_config_descriptor(struct libusb_device *dev, void *buffer, size_t len) {
-    printf("Getting active configuration descriptor in WASM backend\n");
     struct libusb_context *ctx = DEVICE_CTX(dev);
     wasi_device_priv_t *dpriv = get_device_priv(dev);
 
-    // Get configuration first
-    uint8_t config_value = 0;
-
-    // Since we don't have a handle yet, we need to open the device temporarily
+    // Borrow the device
     component_usb_device_borrow_usb_device_t borrowed_device =
         component_usb_device_borrow_usb_device(dpriv->device);
 
+    // Since we don't have a handle yet, we need to open the device temporarily
     component_usb_device_own_device_handle_t temp_handle;
     component_usb_device_libusb_error_t err;
 
     if (!component_usb_device_method_usb_device_open(borrowed_device, &temp_handle, &err)) {
-        printf("Failed to open device for getting active config: %d\n", err);
         return libusb_error_from_wasi(err);
     }
 
@@ -414,21 +276,19 @@ static int wasm_get_active_config_descriptor(struct libusb_device *dev, void *bu
     component_usb_device_borrow_device_handle_t borrowed_handle =
         component_usb_device_borrow_device_handle(temp_handle);
 
-    // Get configuration
+    // Get configuration value
+    uint8_t config_value = 0;
     if (!component_usb_device_method_device_handle_get_configuration(borrowed_handle, &config_value, &err)) {
         component_usb_device_method_device_handle_close(borrowed_handle);
         component_usb_device_device_handle_drop_own(temp_handle);
 
         if (err == COMPONENT_USB_ERRORS_LIBUSB_ERROR_NOT_FOUND) {
-            printf("Device is not configured\n");
             return LIBUSB_ERROR_NOT_FOUND;
         }
-
-        printf("Failed to get active configuration: %d\n", err);
         return libusb_error_from_wasi(err);
     }
 
-    // Close the temporary handle
+    // Close the temporary handle - we don't need it anymore
     component_usb_device_method_device_handle_close(borrowed_handle);
     component_usb_device_device_handle_drop_own(temp_handle);
 
@@ -437,40 +297,142 @@ static int wasm_get_active_config_descriptor(struct libusb_device *dev, void *bu
         return LIBUSB_ERROR_NOT_FOUND;
     }
 
-    // Now get the configuration descriptor
+    // Get the active configuration descriptor using the config_value
     component_usb_device_configuration_descriptor_t config_desc;
-
     if (!component_usb_device_method_usb_device_get_configuration_descriptor_by_value(
             borrowed_device, config_value, &config_desc, &err)) {
-        printf("Failed to get configuration descriptor: %d\n", err);
         return libusb_error_from_wasi(err);
     }
 
-    // Ensure buffer is large enough
+    printf("Active configuration descriptor: total_length=%u, num_interfaces=%u\n", 
+           config_desc.total_length, config_desc.interfaces.len);
+
+    // Check if buffer is too small - but continue with partial copy instead of returning error
     if (len < config_desc.total_length) {
-        usbi_err(ctx, "Buffer too small for configuration descriptor");
-        return LIBUSB_ERROR_OVERFLOW;
+        usbi_dbg(ctx, "Buffer too small for active config descriptor (need %u, have %zu) - will do partial copy",
+                 config_desc.total_length, len);
     }
 
-    // Copy descriptor to buffer (for now, a basic descriptor)
-    struct usbi_configuration_descriptor *dest = (struct usbi_configuration_descriptor *)buffer;
-    dest->bLength = config_desc.length;
-    dest->bDescriptorType = config_desc.descriptor_type;
-    dest->wTotalLength = libusb_cpu_to_le16(config_desc.total_length);
-    dest->bNumInterfaces = config_desc.num_interfaces;
-    dest->bConfigurationValue = config_desc.configuration_value;
-    dest->iConfiguration = config_desc.configuration_index;
-    dest->bmAttributes = config_desc.attributes;
-    dest->bMaxPower = config_desc.max_power;
+    // Start filling the descriptor
+    uint8_t *ptr = buffer;
+    uint8_t *end = ptr + len; // Never go beyond this point
 
-    // In a real implementation, we would also need to get interface and endpoint descriptors
-    // and populate the rest of the configuration descriptor, but this is complex without direct access
+    // Fill in the main configuration descriptor
+    struct usbi_configuration_descriptor *config = (struct usbi_configuration_descriptor *)ptr;
+    
+    // Make sure we have at least enough space for the config descriptor header
+    if (len >= sizeof(struct usbi_configuration_descriptor)) {
+        config->bLength = config_desc.length;
+        config->bDescriptorType = config_desc.descriptor_type;
+        config->wTotalLength = libusb_cpu_to_le16(config_desc.total_length);
+        config->bNumInterfaces = config_desc.interfaces.len;
+        config->bConfigurationValue = config_desc.configuration_value;
+        config->iConfiguration = config_desc.configuration_index;
+        config->bmAttributes = config_desc.attributes;
+        config->bMaxPower = config_desc.max_power;
+    
+        ptr += config_desc.length;
+    } else {
+        // Not even enough space for the header - copy what we can
+        size_t to_copy = len;
+        memset(buffer, 0, to_copy); // Zero first to ensure fields are initialized
+        memcpy(buffer, &config_desc, to_copy);
+        
+        // Free the descriptor resources that were allocated by the component
+        component_usb_descriptors_configuration_descriptor_free(&config_desc);
+        
+        // Return the amount actually copied
+        return (int)to_copy;
+    }
 
-    return (int)config_desc.total_length;
+    // Process each interface - only if we have space left
+    for (size_t i = 0; i < config_desc.interfaces.len && ptr < end; i++) {
+        component_usb_descriptors_interface_descriptor_t *interface = &config_desc.interfaces.ptr[i];
+        
+        // Make sure we have enough space for this interface descriptor
+        if (ptr + interface->length > end) {
+            // Not enough space for this entire interface, copy what we can
+            size_t space_left = end - ptr;
+            if (space_left > 0) {
+                memcpy(ptr, interface, space_left);
+                ptr += space_left;
+            }
+            break; // No more room
+        }
+        
+        // Fill in interface descriptor
+        struct usbi_interface_descriptor *if_desc = (struct usbi_interface_descriptor *)ptr;
+        if_desc->bLength = interface->length;
+        if_desc->bDescriptorType = interface->descriptor_type;
+        if_desc->bInterfaceNumber = interface->interface_number;
+        if_desc->bAlternateSetting = interface->alternate_setting;
+        if_desc->bNumEndpoints = interface->endpoints.len;
+        if_desc->bInterfaceClass = interface->interface_class;
+        if_desc->bInterfaceSubClass = interface->interface_subclass;
+        if_desc->bInterfaceProtocol = interface->interface_protocol;
+        if_desc->iInterface = interface->interface_index;
+
+        ptr += interface->length;
+
+        // Process each endpoint in this interface
+        for (size_t j = 0; j < interface->endpoints.len && ptr < end; j++) {
+            component_usb_descriptors_endpoint_descriptor_t *ep = &interface->endpoints.ptr[j];
+            
+            // Make sure we have enough space for this endpoint descriptor
+            if (ptr + ep->length > end) {
+                // Not enough space for this entire endpoint, copy what we can
+                size_t space_left = end - ptr;
+                if (space_left > 0) {
+                    memcpy(ptr, ep, space_left);
+                    ptr += space_left;
+                }
+                break; // No more room
+            }
+            
+            // Fill in endpoint descriptor
+            struct usbi_descriptor_header *ep_desc = (struct usbi_descriptor_header *)ptr;
+            ep_desc->bLength = ep->length;
+            ep_desc->bDescriptorType = ep->descriptor_type;
+            
+            if (ep->length >= 3) {
+                ptr[2] = ep->endpoint_address;  // bEndpointAddress
+            }
+            if (ep->length >= 4) {
+                ptr[3] = ep->attributes;        // bmAttributes
+            }
+            if (ep->length >= 6) {
+                // Fill in wMaxPacketSize (little-endian)
+                ptr[4] = ep->max_packet_size & 0xFF;
+                ptr[5] = (ep->max_packet_size >> 8) & 0xFF;
+            }
+            if (ep->length >= 7) {
+                ptr[6] = ep->interval;          // bInterval
+            }
+            if (ep->length >= 8) {
+                ptr[7] = ep->refresh;           // bRefresh
+            }
+            if (ep->length >= 9) {
+                ptr[8] = ep->synch_address;     // bSynchAddress
+            }
+            
+            ptr += ep->length;
+        }
+    }
+
+    // Calculate how many bytes we actually filled in
+    size_t filled_length = ptr - (uint8_t *)buffer;
+    
+    printf("Filled %zu bytes of active configuration descriptor (requested buffer size: %zu)\n", 
+           filled_length, len);
+    
+    // Free the descriptor resources that were allocated by the component
+    component_usb_descriptors_configuration_descriptor_free(&config_desc);
+    
+    // Return the amount of data we actually provided
+    return (int)filled_length;
 }
 
 static int wasm_get_config_descriptor(struct libusb_device *dev, uint8_t config_index, void *buffer, size_t len) {
-    printf("Getting configuration descriptor for index %u in WASM backend\n", config_index);
     struct libusb_context *ctx = DEVICE_CTX(dev);
     wasi_device_priv_t *dpriv = get_device_priv(dev);
 
@@ -486,28 +448,134 @@ static int wasm_get_config_descriptor(struct libusb_device *dev, uint8_t config_
         return libusb_error_from_wasi(err);
     }
 
-    // Ensure buffer is large enough
+    printf("Configuration descriptor: total_length=%u, num_interfaces=%u\n", 
+           config_desc.total_length, config_desc.interfaces.len);
+
+    // Check if buffer is too small - but continue with partial copy instead of returning error
     if (len < config_desc.total_length) {
-        usbi_err(ctx, "Buffer too small for configuration descriptor");
-        return LIBUSB_ERROR_OVERFLOW;
+        usbi_dbg(ctx, "Buffer too small for configuration descriptor (need %u, have %zu) - will do partial copy",
+                 config_desc.total_length, len);
     }
 
-    // Copy descriptor to buffer (for now, a basic descriptor)
-    struct usbi_configuration_descriptor *dest = (struct usbi_configuration_descriptor *)buffer;
-    dest->bLength = config_desc.length;
-    dest->bDescriptorType = config_desc.descriptor_type;
-    dest->wTotalLength = libusb_cpu_to_le16(config_desc.total_length);
-    dest->bNumInterfaces = config_desc.num_interfaces;
-    dest->bConfigurationValue = config_desc.configuration_value;
-    dest->iConfiguration = config_desc.configuration_index;
-    dest->bmAttributes = config_desc.attributes;
-    dest->bMaxPower = config_desc.max_power;
+    // Start filling the descriptor
+    uint8_t *ptr = buffer;
+    uint8_t *end = ptr + len; // Never go beyond this point
 
-    return (int)config_desc.total_length;
+    // Fill in the main configuration descriptor
+    struct usbi_configuration_descriptor *config = (struct usbi_configuration_descriptor *)ptr;
+    
+    // Make sure we have at least enough space for the config descriptor header
+    if (len >= sizeof(struct usbi_configuration_descriptor)) {
+        config->bLength = config_desc.length;
+        config->bDescriptorType = config_desc.descriptor_type;
+        config->wTotalLength = libusb_cpu_to_le16(config_desc.total_length);
+        config->bNumInterfaces = config_desc.interfaces.len;
+        config->bConfigurationValue = config_desc.configuration_value;
+        config->iConfiguration = config_desc.configuration_index;
+        config->bmAttributes = config_desc.attributes;
+        config->bMaxPower = config_desc.max_power;
+    
+        ptr += config_desc.length;
+    } else {
+        // Not even enough space for the header - copy what we can
+        size_t to_copy = len;
+        memset(buffer, 0, to_copy); // Zero first to ensure fields are initialized
+        memcpy(buffer, &config_desc, to_copy);
+        
+        // Free the descriptor resources that were allocated by the component
+        component_usb_descriptors_configuration_descriptor_free(&config_desc);
+        
+        // Return the amount actually copied
+        return (int)to_copy;
+    }
+
+    // Process each interface - only if we have space left
+    for (size_t i = 0; i < config_desc.interfaces.len && ptr < end; i++) {
+        component_usb_descriptors_interface_descriptor_t *interface = &config_desc.interfaces.ptr[i];
+        
+        // Make sure we have enough space for this interface descriptor
+        if (ptr + interface->length > end) {
+            // Not enough space for this entire interface, copy what we can
+            size_t space_left = end - ptr;
+            if (space_left > 0) {
+                memcpy(ptr, interface, space_left);
+                ptr += space_left;
+            }
+            break; // No more room
+        }
+        
+        // Fill in interface descriptor
+        struct usbi_interface_descriptor *if_desc = (struct usbi_interface_descriptor *)ptr;
+        if_desc->bLength = interface->length;
+        if_desc->bDescriptorType = interface->descriptor_type;
+        if_desc->bInterfaceNumber = interface->interface_number;
+        if_desc->bAlternateSetting = interface->alternate_setting;
+        if_desc->bNumEndpoints = interface->endpoints.len;
+        if_desc->bInterfaceClass = interface->interface_class;
+        if_desc->bInterfaceSubClass = interface->interface_subclass;
+        if_desc->bInterfaceProtocol = interface->interface_protocol;
+        if_desc->iInterface = interface->interface_index;
+
+        ptr += interface->length;
+
+        // Process each endpoint in this interface
+        for (size_t j = 0; j < interface->endpoints.len && ptr < end; j++) {
+            component_usb_descriptors_endpoint_descriptor_t *ep = &interface->endpoints.ptr[j];
+            
+            // Make sure we have enough space for this endpoint descriptor
+            if (ptr + ep->length > end) {
+                // Not enough space for this entire endpoint, copy what we can
+                size_t space_left = end - ptr;
+                if (space_left > 0) {
+                    memcpy(ptr, ep, space_left);
+                    ptr += space_left;
+                }
+                break; // No more room
+            }
+            
+            // Fill in endpoint descriptor
+            struct usbi_descriptor_header *ep_desc = (struct usbi_descriptor_header *)ptr;
+            ep_desc->bLength = ep->length;
+            ep_desc->bDescriptorType = ep->descriptor_type;
+            
+            if (ep->length >= 3) {
+                ptr[2] = ep->endpoint_address;  // bEndpointAddress
+            }
+            if (ep->length >= 4) {
+                ptr[3] = ep->attributes;        // bmAttributes
+            }
+            if (ep->length >= 6) {
+                // Fill in wMaxPacketSize (little-endian)
+                ptr[4] = ep->max_packet_size & 0xFF;
+                ptr[5] = (ep->max_packet_size >> 8) & 0xFF;
+            }
+            if (ep->length >= 7) {
+                ptr[6] = ep->interval;          // bInterval
+            }
+            if (ep->length >= 8) {
+                ptr[7] = ep->refresh;           // bRefresh
+            }
+            if (ep->length >= 9) {
+                ptr[8] = ep->synch_address;     // bSynchAddress
+            }
+            
+            ptr += ep->length;
+        }
+    }
+
+    // Calculate how many bytes we actually filled in
+    size_t filled_length = ptr - (uint8_t *)buffer;
+    
+    printf("Filled %zu bytes of configuration descriptor (requested buffer size: %zu)\n", filled_length, len);
+    
+    // Free the descriptor resources that were allocated by the component
+    component_usb_descriptors_configuration_descriptor_free(&config_desc);
+    
+    // Return the amount of data we actually provided
+    return (int)filled_length;
 }
 
 static int wasm_get_config_descriptor_by_value(struct libusb_device *dev, uint8_t config_value, void **buffer) {
-    printf("Getting configuration descriptor by value %u in WASM backend\n", config_value);
     struct libusb_context *ctx = DEVICE_CTX(dev);
     wasi_device_priv_t *dpriv = get_device_priv(dev);
 
@@ -523,32 +591,102 @@ static int wasm_get_config_descriptor_by_value(struct libusb_device *dev, uint8_
         return libusb_error_from_wasi(err);
     }
 
-    // Allocate buffer for the descriptor
-    *buffer = malloc(config_desc.total_length);
+    printf("Config descriptor by value: total_length=%u, num_interfaces=%u\n", 
+           config_desc.total_length, config_desc.interfaces.len);
+
+    // Allocate a buffer large enough for the entire descriptor
+    *buffer = calloc(1, config_desc.total_length);
     if (!*buffer) {
+        component_usb_descriptors_configuration_descriptor_free(&config_desc);
         return LIBUSB_ERROR_NO_MEM;
     }
 
-    // Copy descriptor to buffer (for now, a basic descriptor)
-    struct usbi_configuration_descriptor *dest = (struct usbi_configuration_descriptor *)*buffer;
-    dest->bLength = config_desc.length;
-    dest->bDescriptorType = config_desc.descriptor_type;
-    dest->wTotalLength = libusb_cpu_to_le16(config_desc.total_length);
-    dest->bNumInterfaces = config_desc.num_interfaces;
-    dest->bConfigurationValue = config_desc.configuration_value;
-    dest->iConfiguration = config_desc.configuration_index;
-    dest->bmAttributes = config_desc.attributes;
-    dest->bMaxPower = config_desc.max_power;
+    // Start filling the descriptor
+    uint8_t *ptr = *buffer;
+    uint8_t *end = ptr + config_desc.total_length;
 
-    return (int)config_desc.total_length;
+    // Fill in the main configuration descriptor
+    struct usbi_configuration_descriptor *config = (struct usbi_configuration_descriptor *)ptr;
+    config->bLength = config_desc.length;
+    config->bDescriptorType = config_desc.descriptor_type;
+    config->wTotalLength = libusb_cpu_to_le16(config_desc.total_length);
+    config->bNumInterfaces = config_desc.interfaces.len;
+    config->bConfigurationValue = config_desc.configuration_value;
+    config->iConfiguration = config_desc.configuration_index;
+    config->bmAttributes = config_desc.attributes;
+    config->bMaxPower = config_desc.max_power;
+
+    ptr += config_desc.length;
+
+    // Process each interface
+    for (size_t i = 0; i < config_desc.interfaces.len && ptr < end; i++) {
+        component_usb_descriptors_interface_descriptor_t *interface = &config_desc.interfaces.ptr[i];
+        
+        // Fill in interface descriptor
+        struct usbi_interface_descriptor *if_desc = (struct usbi_interface_descriptor *)ptr;
+        if_desc->bLength = interface->length;
+        if_desc->bDescriptorType = interface->descriptor_type;
+        if_desc->bInterfaceNumber = interface->interface_number;
+        if_desc->bAlternateSetting = interface->alternate_setting;
+        if_desc->bNumEndpoints = interface->endpoints.len;
+        if_desc->bInterfaceClass = interface->interface_class;
+        if_desc->bInterfaceSubClass = interface->interface_subclass;
+        if_desc->bInterfaceProtocol = interface->interface_protocol;
+        if_desc->iInterface = interface->interface_index;
+
+        ptr += interface->length;
+
+        // Process each endpoint in this interface
+        for (size_t j = 0; j < interface->endpoints.len && ptr < end; j++) {
+            component_usb_descriptors_endpoint_descriptor_t *ep = &interface->endpoints.ptr[j];
+            
+            // Fill in endpoint descriptor
+            struct usbi_descriptor_header *ep_desc = (struct usbi_descriptor_header *)ptr;
+            ep_desc->bLength = ep->length;
+            ep_desc->bDescriptorType = ep->descriptor_type;
+            
+            if (ep->length >= 3) {
+                ptr[2] = ep->endpoint_address;  // bEndpointAddress
+            }
+            if (ep->length >= 4) {
+                ptr[3] = ep->attributes;        // bmAttributes
+            }
+            if (ep->length >= 6) {
+                // Fill in wMaxPacketSize (little-endian)
+                ptr[4] = ep->max_packet_size & 0xFF;
+                ptr[5] = (ep->max_packet_size >> 8) & 0xFF;
+            }
+            if (ep->length >= 7) {
+                ptr[6] = ep->interval;          // bInterval
+            }
+            if (ep->length >= 8) {
+                ptr[7] = ep->refresh;           // bRefresh
+            }
+            if (ep->length >= 9) {
+                ptr[8] = ep->synch_address;     // bSynchAddress
+            }
+            
+            ptr += ep->length;
+        }
+    }
+
+    // Calculate how many bytes we actually filled in
+    size_t filled_length = ptr - (uint8_t *)*buffer;
+    
+    printf("Filled %zu bytes of configuration descriptor by value\n", filled_length);
+    
+    // Free the descriptor resources that were allocated by the component
+    component_usb_descriptors_configuration_descriptor_free(&config_desc);
+    
+    // Return the amount of data we actually provided
+    return (int)filled_length;
 }
 
 // ---------------------------------------------------------------------------
 // Configuration & interface management
 // ---------------------------------------------------------------------------
 static int wasm_get_configuration(struct libusb_device_handle *handle, uint8_t *config) {
-    printf("Getting configuration in WASM backend\n");
-    struct libusb_context *ctx = HANDLE_CTX(handle);
+        struct libusb_context *ctx = HANDLE_CTX(handle);
     wasi_device_handle_priv_t *hpriv = get_handle_priv(handle);
 
     component_usb_device_borrow_device_handle_t borrowed_handle = component_usb_device_borrow_device_handle(hpriv->handle);
@@ -556,16 +694,14 @@ static int wasm_get_configuration(struct libusb_device_handle *handle, uint8_t *
     component_usb_device_libusb_error_t err;
 
     if (!component_usb_device_method_device_handle_get_configuration(borrowed_handle, config, &err)) {
-        printf("Failed to get configuration: %d\n", err);
-        return libusb_error_from_wasi(err);
+                return libusb_error_from_wasi(err);
     }
 
     return LIBUSB_SUCCESS;
 }
 
 static int wasm_set_configuration(struct libusb_device_handle *handle, int config) {
-    printf("Setting configuration %d in WASM backend\n", config);
-    struct libusb_context *ctx = HANDLE_CTX(handle);
+        struct libusb_context *ctx = HANDLE_CTX(handle);
     wasi_device_handle_priv_t *hpriv = get_handle_priv(handle);
 
     component_usb_device_borrow_device_handle_t borrowed_handle = component_usb_device_borrow_device_handle(hpriv->handle);
@@ -582,16 +718,14 @@ static int wasm_set_configuration(struct libusb_device_handle *handle, int confi
     component_usb_device_libusb_error_t err;
 
     if (!component_usb_device_method_device_handle_set_configuration(borrowed_handle, &cfg_value, &err)) {
-        printf("Failed to set configuration: %d\n", err);
-        return libusb_error_from_wasi(err);
+                return libusb_error_from_wasi(err);
     }
 
     return LIBUSB_SUCCESS;
 }
 
 static int wasm_claim_interface(struct libusb_device_handle *handle, uint8_t interface_number) {
-    printf("Claiming interface %d in WASM backend\n", interface_number);
-    struct libusb_context *ctx = HANDLE_CTX(handle);
+        struct libusb_context *ctx = HANDLE_CTX(handle);
     wasi_device_handle_priv_t *hpriv = get_handle_priv(handle);
 
     component_usb_device_borrow_device_handle_t borrowed_handle = component_usb_device_borrow_device_handle(hpriv->handle);
@@ -600,16 +734,14 @@ static int wasm_claim_interface(struct libusb_device_handle *handle, uint8_t int
 
     if (!component_usb_device_method_device_handle_claim_interface(
             borrowed_handle, interface_number, &err)) {
-        printf("Failed to claim interface: %d\n", err);
-        return libusb_error_from_wasi(err);
+                return libusb_error_from_wasi(err);
     }
 
     return LIBUSB_SUCCESS;
 }
 
 static int wasm_release_interface(struct libusb_device_handle *handle, uint8_t interface_number) {
-    printf("Releasing interface %d in WASM backend\n", interface_number);
-    struct libusb_context *ctx = HANDLE_CTX(handle);
+        struct libusb_context *ctx = HANDLE_CTX(handle);
     wasi_device_handle_priv_t *hpriv = get_handle_priv(handle);
 
     component_usb_device_borrow_device_handle_t borrowed_handle = component_usb_device_borrow_device_handle(hpriv->handle);
@@ -618,8 +750,7 @@ static int wasm_release_interface(struct libusb_device_handle *handle, uint8_t i
 
     if (!component_usb_device_method_device_handle_release_interface(
             borrowed_handle, interface_number, &err)) {
-        printf("Failed to release interface: %d\n", err);
-        return libusb_error_from_wasi(err);
+                return libusb_error_from_wasi(err);
     }
 
     return LIBUSB_SUCCESS;
@@ -638,16 +769,14 @@ static int wasm_set_interface_altsetting(struct libusb_device_handle *handle,
 
     if (!component_usb_device_method_device_handle_set_interface_altsetting(
             borrowed_handle, interface_number, altsetting, &err)) {
-        printf("Failed to set interface altsetting: %d\n", err);
-        return libusb_error_from_wasi(err);
+                return libusb_error_from_wasi(err);
     }
 
     return LIBUSB_SUCCESS;
 }
 
 static int wasm_clear_halt(struct libusb_device_handle *handle, unsigned char endpoint) {
-    printf("Clearing halt on endpoint %02x in WASM backend\n", endpoint);
-    struct libusb_context *ctx = HANDLE_CTX(handle);
+        struct libusb_context *ctx = HANDLE_CTX(handle);
     wasi_device_handle_priv_t *hpriv = get_handle_priv(handle);
 
     component_usb_device_borrow_device_handle_t borrowed_handle = component_usb_device_borrow_device_handle(hpriv->handle);
@@ -656,16 +785,14 @@ static int wasm_clear_halt(struct libusb_device_handle *handle, unsigned char en
 
     if (!component_usb_device_method_device_handle_clear_halt(
             borrowed_handle, endpoint, &err)) {
-        printf("Failed to clear halt: %d\n", err);
-        return libusb_error_from_wasi(err);
+                return libusb_error_from_wasi(err);
     }
 
     return LIBUSB_SUCCESS;
 }
 
 static int wasm_reset_device(struct libusb_device_handle *handle) {
-    printf("Resetting device in WASM backend\n");
-    struct libusb_context *ctx = HANDLE_CTX(handle);
+        struct libusb_context *ctx = HANDLE_CTX(handle);
     wasi_device_handle_priv_t *hpriv = get_handle_priv(handle);
 
     component_usb_device_borrow_device_handle_t borrowed_handle = component_usb_device_borrow_device_handle(hpriv->handle);
@@ -673,8 +800,7 @@ static int wasm_reset_device(struct libusb_device_handle *handle) {
     component_usb_device_libusb_error_t err;
 
     if (!component_usb_device_method_device_handle_reset_device(borrowed_handle, &err)) {
-        printf("Failed to reset device: %d\n", err);
-        return libusb_error_from_wasi(err);
+                return libusb_error_from_wasi(err);
     }
 
     return LIBUSB_SUCCESS;
@@ -684,8 +810,7 @@ static int wasm_reset_device(struct libusb_device_handle *handle) {
 // Kernel driver management
 // ---------------------------------------------------------------------------
 static int wasm_kernel_driver_active(struct libusb_device_handle *handle, uint8_t interface_number) {
-    printf("Checking if kernel driver is active for interface %d in WASM backend\n", interface_number);
-    struct libusb_context *ctx = HANDLE_CTX(handle);
+        struct libusb_context *ctx = HANDLE_CTX(handle);
     wasi_device_handle_priv_t *hpriv = get_handle_priv(handle);
 
     component_usb_device_borrow_device_handle_t borrowed_handle = component_usb_device_borrow_device_handle(hpriv->handle);
@@ -699,16 +824,14 @@ static int wasm_kernel_driver_active(struct libusb_device_handle *handle, uint8_
             // Not supported is a valid response for this API
             return 0;
         }
-        printf("Failed to check kernel driver active: %d\n", err);
-        return libusb_error_from_wasi(err);
+                return libusb_error_from_wasi(err);
     }
 
     return active ? 1 : 0;
 }
 
 static int wasm_detach_kernel_driver(struct libusb_device_handle *handle, uint8_t interface_number) {
-    printf("Detaching kernel driver for interface %d in WASM backend\n", interface_number);
-    struct libusb_context *ctx = HANDLE_CTX(handle);
+        struct libusb_context *ctx = HANDLE_CTX(handle);
     wasi_device_handle_priv_t *hpriv = get_handle_priv(handle);
 
     component_usb_device_borrow_device_handle_t borrowed_handle = component_usb_device_borrow_device_handle(hpriv->handle);
@@ -720,16 +843,14 @@ static int wasm_detach_kernel_driver(struct libusb_device_handle *handle, uint8_
         if (err == COMPONENT_USB_ERRORS_LIBUSB_ERROR_NOT_SUPPORTED) {
             return LIBUSB_ERROR_NOT_SUPPORTED;
         }
-        printf("Failed to detach kernel driver: %d\n", err);
-        return libusb_error_from_wasi(err);
+                return libusb_error_from_wasi(err);
     }
 
     return LIBUSB_SUCCESS;
 }
 
 static int wasm_attach_kernel_driver(struct libusb_device_handle *handle, uint8_t interface_number) {
-    printf("Attaching kernel driver for interface %d in WASM backend\n", interface_number);
-    struct libusb_context *ctx = HANDLE_CTX(handle);
+        struct libusb_context *ctx = HANDLE_CTX(handle);
     wasi_device_handle_priv_t *hpriv = get_handle_priv(handle);
 
     component_usb_device_borrow_device_handle_t borrowed_handle = component_usb_device_borrow_device_handle(hpriv->handle);
@@ -741,8 +862,7 @@ static int wasm_attach_kernel_driver(struct libusb_device_handle *handle, uint8_
         if (err == COMPONENT_USB_ERRORS_LIBUSB_ERROR_NOT_SUPPORTED) {
             return LIBUSB_ERROR_NOT_SUPPORTED;
         }
-        printf("Failed to attach kernel driver: %d\n", err);
-        return libusb_error_from_wasi(err);
+                return libusb_error_from_wasi(err);
     }
 
     return LIBUSB_SUCCESS;
@@ -772,8 +892,7 @@ static int wasm_alloc_streams(struct libusb_device_handle *handle, uint32_t num_
         if (err == COMPONENT_USB_ERRORS_LIBUSB_ERROR_NOT_SUPPORTED) {
             return LIBUSB_ERROR_NOT_SUPPORTED;
         }
-        printf("Failed to allocate streams: %d\n", err);
-        return libusb_error_from_wasi(err);
+                return libusb_error_from_wasi(err);
     }
 
     return LIBUSB_SUCCESS;
@@ -781,8 +900,7 @@ static int wasm_alloc_streams(struct libusb_device_handle *handle, uint32_t num_
 
 static int wasm_free_streams(struct libusb_device_handle *handle,
                             unsigned char *endpoints, int num_endpoints) {
-	printf("Freeing streams for %d endpoints in WASM backend\n", num_endpoints);
-    struct libusb_context *ctx = HANDLE_CTX(handle);
+	    struct libusb_context *ctx = HANDLE_CTX(handle);
     wasi_device_handle_priv_t *hpriv = get_handle_priv(handle);
 
     component_usb_device_borrow_device_handle_t borrowed_handle = component_usb_device_borrow_device_handle(hpriv->handle);
@@ -799,8 +917,7 @@ static int wasm_free_streams(struct libusb_device_handle *handle,
         if (err == COMPONENT_USB_ERRORS_LIBUSB_ERROR_NOT_SUPPORTED) {
             return LIBUSB_ERROR_NOT_SUPPORTED;
         }
-        printf("Failed to free streams: %d\n", err);
-        return libusb_error_from_wasi(err);
+                return libusb_error_from_wasi(err);
     }
 
     return LIBUSB_SUCCESS;
@@ -810,8 +927,7 @@ static int wasm_free_streams(struct libusb_device_handle *handle,
 // Transfer management
 // ---------------------------------------------------------------------------
 static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
-    printf("Submitting transfer in WASM backend\n");
-    struct libusb_transfer *transfer = USBI_TRANSFER_TO_LIBUSB_TRANSFER(itransfer);
+        struct libusb_transfer *transfer = USBI_TRANSFER_TO_LIBUSB_TRANSFER(itransfer);
     struct libusb_context *ctx = TRANSFER_CTX(transfer);
     struct libusb_device_handle *handle = transfer->dev_handle;
     wasi_device_handle_priv_t *hpriv = get_handle_priv(handle);
@@ -828,8 +944,7 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
     
     // Validate the transfer
     if (!transfer->buffer && transfer->length > 0) {
-        printf("Transfer buffer is NULL but length is %d\n", transfer->length);
-        return LIBUSB_ERROR_INVALID_PARAM;
+                return LIBUSB_ERROR_INVALID_PARAM;
     }
     
     // Get device handle
@@ -858,8 +973,7 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
         xfer_type = COMPONENT_USB_TRANSFERS_TRANSFER_TYPE_CONTROL;
         
         if (transfer->length < LIBUSB_CONTROL_SETUP_SIZE) {
-            printf("Control transfer with insufficient buffer length: %d\n", transfer->length);
-            return LIBUSB_ERROR_INVALID_PARAM;
+                        return LIBUSB_ERROR_INVALID_PARAM;
         }
         
         // Extract control setup
@@ -870,23 +984,17 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
         setup.b_request = ctrl->bRequest;
         setup.w_value = libusb_le16_to_cpu(ctrl->wValue);
         setup.w_index = libusb_le16_to_cpu(ctrl->wIndex);
-        
-        printf("Control transfer: bmRequestType=0x%02x, bRequest=0x%02x, wValue=0x%04x, wIndex=0x%04x\n",
-               setup.bm_request_type, setup.b_request, setup.w_value, setup.w_index);
-        printf("Control transfer: wLength=%u\n", wLength);
-        
+                
         // Set the buffer size to match the wLength in the setup packet
         buffer_size = wLength;
         
-        if (IS_XFERIN(transfer)) {
+        if (true) {
             // For control IN transfers, submit an empty buffer
-            printf("Control IN transfer\n");
-            submit_data.ptr = &dummy_buffer;
+                        submit_data.ptr = &dummy_buffer;
             submit_data.len = 0;
         } else {
             // For control OUT, use data after the setup packet
-            printf("Control OUT transfer\n");
-            if (transfer->length > LIBUSB_CONTROL_SETUP_SIZE) {
+                        if (transfer->length > LIBUSB_CONTROL_SETUP_SIZE) {
                 submit_data.ptr = transfer->buffer + LIBUSB_CONTROL_SETUP_SIZE;
                 submit_data.len = transfer->length - LIBUSB_CONTROL_SETUP_SIZE;
                 if (submit_data.len > wLength) {
@@ -909,8 +1017,7 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
             xfer_type = COMPONENT_USB_TRANSFERS_TRANSFER_TYPE_ISOCHRONOUS;
             opts.iso_packets = transfer->num_iso_packets;
         } else {
-            printf("Unsupported transfer type: %d\n", transfer->type);
-            return LIBUSB_ERROR_INVALID_PARAM;
+                        return LIBUSB_ERROR_INVALID_PARAM;
         }
         
         // For non-control transfers, submit the entire buffer
@@ -926,8 +1033,7 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
     
     if (!component_usb_device_method_device_handle_new_transfer(
             borrowed_handle, xfer_type, &setup, buffer_size, &opts, &wasm_transfer, &err)) {
-        printf("Failed to create transfer: %d\n", err);
-        return libusb_error_from_wasi(err);
+                return libusb_error_from_wasi(err);
     }
     
     // Store transfer handle
@@ -940,13 +1046,11 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
     component_usb_transfers_libusb_error_t submit_err;
     
     if (!component_usb_transfers_method_transfer_submit_transfer(borrowed_transfer, &submit_data, &submit_err)) {
-        printf("Failed to submit transfer: %d\n", submit_err);
-        component_usb_transfers_transfer_drop_own(wasm_transfer);
+                component_usb_transfers_transfer_drop_own(wasm_transfer);
         return libusb_error_from_wasi(submit_err);
     }
     
-    printf("Transfer submitted successfully\n");
-    
+        
     // Mark the transfer as in flight
     itransfer->state_flags |= USBI_TRANSFER_IN_FLIGHT;
     
@@ -954,12 +1058,10 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
     cguest_list_u8_t result = {NULL, 0};
     component_usb_transfers_libusb_error_t await_err;
     
-    printf("Awaiting transfer completion...\n");
-    
+        
     if (!component_usb_transfers_await_transfer(wasm_transfer, &result, &await_err)) {
         // Transfer failed
-        printf("Transfer failed: %d\n", await_err);
-        
+                
         if (await_err == COMPONENT_USB_ERRORS_LIBUSB_ERROR_TIMEOUT) {
             itransfer->state_flags |= USBI_TRANSFER_TIMED_OUT;
             usbi_handle_transfer_completion(itransfer, LIBUSB_TRANSFER_TIMED_OUT);
@@ -971,19 +1073,15 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
     }
     
     // Process successful transfer
-    printf("Transfer completed, received %zu bytes\n", result.len);
-    
+        
     // Debug log received data
     if (result.ptr && result.len > 0) {
-        printf("Received data: ");
-        for (size_t i = 0; i < result.len && i < 32; i++) {
-            printf("%02x ", result.ptr[i]);
-        }
-        printf("\n");
-    }
+                for (size_t i = 0; i < result.len && i < 32; i++) {
+                    }
+            }
     
     // Handle the transfer based on type and direction
-    if (true) {
+    if (IS_XFERIN(transfer)) {
         if (transfer->type == LIBUSB_TRANSFER_TYPE_CONTROL) {
             // For control IN transfers
             if (result.ptr && result.len > 0) {
@@ -1015,8 +1113,7 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
             } else {
                 // No data received
                 transfer->actual_length = 0;
-                printf("Control IN: no data received, actual_length=0\n");
-            }
+                            }
         } else {
             // For non-control IN transfers (bulk, interrupt, iso)
             if (result.ptr && result.len > 0) {
@@ -1029,8 +1126,7 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
             } else {
                 // No data received
                 transfer->actual_length = 0;
-                printf("Non-control IN: no data received, actual_length=0\n");
-            }
+                            }
         }
     } else {
         // For OUT transfers
@@ -1041,8 +1137,7 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
             // Non-control OUT transfers
             transfer->actual_length = result.len;
         }
-        printf("OUT transfer: actual_length=%d\n", transfer->actual_length);
-    }
+            }
     
     // Set the transferred bytes count in the internal transfer struct
     itransfer->transferred = transfer->actual_length;
@@ -1051,7 +1146,7 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
     if (result.ptr) {
         void *ptr_to_free = result.ptr;
         result.ptr = NULL;  // Clear first to avoid double-free issues
-        free(ptr_to_free);
+        // free(ptr_to_free);
     }
     
     // Mark transfer as completed
@@ -1064,8 +1159,7 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
 }
 
 static int wasm_cancel_transfer(struct usbi_transfer *itransfer) {
-    printf("Cancelling transfer in WASM backend\n");
-    struct libusb_transfer *transfer = USBI_TRANSFER_TO_LIBUSB_TRANSFER(itransfer);
+        struct libusb_transfer *transfer = USBI_TRANSFER_TO_LIBUSB_TRANSFER(itransfer);
     struct libusb_context *ctx = TRANSFER_CTX(transfer);
     wasi_transfer_priv_t *tpriv = get_transfer_priv(itransfer);
 
@@ -1095,8 +1189,7 @@ static int wasm_cancel_transfer(struct usbi_transfer *itransfer) {
     component_usb_transfers_libusb_error_t err;
 
     if (!component_usb_transfers_method_transfer_cancel_transfer(borrowed_transfer, &err)) {
-        printf("Failed to cancel transfer: %d\n", err);
-        return libusb_error_from_wasi(err);
+                return libusb_error_from_wasi(err);
     }
 
     // Report cancellation
@@ -1106,8 +1199,7 @@ static int wasm_cancel_transfer(struct usbi_transfer *itransfer) {
 }
 
 static void wasm_clear_transfer_priv(struct usbi_transfer *itransfer) {
-    printf("Clearing transfer private data in WASM backend\n");
-    wasi_transfer_priv_t *tpriv = get_transfer_priv(itransfer);
+        wasi_transfer_priv_t *tpriv = get_transfer_priv(itransfer);
     
     // Free any resources
     if (tpriv && tpriv->buffer) {
@@ -1126,13 +1218,11 @@ static void wasm_clear_transfer_priv(struct usbi_transfer *itransfer) {
 // Memory management
 // ---------------------------------------------------------------------------
 static void *wasm_dev_mem_alloc(struct libusb_device_handle *handle, size_t len) {
-	printf("Allocating %zu bytes of device memory in WASM backend\n", len);
-    return malloc(len);
+	    return malloc(len);
 }
 
 static int wasm_dev_mem_free(struct libusb_device_handle *handle, void *buffer, size_t len) {
-    printf("Freeing %zu bytes of device memory in WASM backend\n", len);
-    free(buffer);
+        free(buffer);
     return LIBUSB_SUCCESS;
 }
 
@@ -1141,8 +1231,7 @@ static int wasm_dev_mem_free(struct libusb_device_handle *handle, void *buffer, 
 // ---------------------------------------------------------------------------
 static int wasm_handle_events(struct libusb_context *ctx, void *event_data,
                               unsigned int count, unsigned int num_ready) {
-	printf("Handling events in WASM backend\n");
-    // Poll for hotplug events
+	    // Poll for hotplug events
 
     // In a real implementation, we would check for completed transfers here
     // For now, our implementation completes transfers synchronously in submit_transfer
@@ -1176,8 +1265,7 @@ int usbi_cond_timedwait(usbi_cond_t *cond, usbi_mutex_t *mutex, const struct tim
 
 // Implement usbi_alloc_event_data for WASI
 int usbi_alloc_event_data(struct libusb_context *ctx) {
-    printf("Allocating event data in WASM backend\n");
-    // Free any existing event data
+        // Free any existing event data
     if (ctx->event_data) {
         free(ctx->event_data);
         ctx->event_data = NULL;
@@ -1205,8 +1293,7 @@ int usbi_alloc_event_data(struct libusb_context *ctx) {
 // Implement usbi_wait_for_events for WASI
 int usbi_wait_for_events(struct libusb_context *ctx,
                           struct usbi_reported_events *reported_events, int timeout_ms) {
-	printf("Waiting for events in WASM backend\n");
-    // Initialize the reported events structure
+	    // Initialize the reported events structure
     reported_events->event_triggered = 0;
     reported_events->num_ready = 0;
     reported_events->event_data = NULL;
@@ -1249,8 +1336,7 @@ int usbi_wait_for_events(struct libusb_context *ctx,
 
 // For WASI hotplug support
 static void wasm_hotplug_poll(void) {
-    printf("Polling for hotplug events in WASM backend\n");
-    // Poll for hotplug events
+        // Poll for hotplug events
     component_usb_usb_hotplug_list_tuple3_event_info_own_usb_device_t events;
     component_usb_usb_hotplug_poll_events(&events);
     
