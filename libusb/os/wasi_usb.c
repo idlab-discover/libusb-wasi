@@ -817,17 +817,16 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
     wasi_device_handle_priv_t *hpriv = get_handle_priv(handle);
     wasi_transfer_priv_t *tpriv = get_transfer_priv(itransfer);
     
-    // Clear transfer private data first to ensure safe state
+    // Initialize transfer private data
     tpriv->buffer = NULL;
     tpriv->buffer_size = 0;
     tpriv->completed = 0;
     tpriv->canceled = 0;
     
-    // Log transfer information
     printf("Transfer type: %d, length: %u, endpoint: 0x%02x\n",
            transfer->type, transfer->length, transfer->endpoint);
     
-    // Validate the transfer before proceeding
+    // Validate the transfer
     if (!transfer->buffer && transfer->length > 0) {
         printf("Transfer buffer is NULL but length is %d\n", transfer->length);
         return LIBUSB_ERROR_INVALID_PARAM;
@@ -837,10 +836,10 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
     component_usb_device_borrow_device_handle_t borrowed_handle = 
         component_usb_device_borrow_device_handle(hpriv->handle);
     
-    // Static buffer for zero-length transfers to prevent NULL pointers
+    // Static buffer for zero-length transfers
     static uint8_t dummy_buffer = 0;
     
-    // Variables for transfer creation
+    // Variables for transfer setup
     component_usb_device_transfer_type_t xfer_type;
     component_usb_device_transfer_setup_t setup = {0};
     component_usb_device_transfer_options_t opts = {0};
@@ -851,7 +850,7 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
     opts.timeout_ms = transfer->timeout;
     opts.stream_id = itransfer->stream_id;
     
-    // Data for submission - initialize to safe values
+    // Data for submission - initialize with safe defaults
     cguest_list_u8_t submit_data = {&dummy_buffer, 0};
     
     // Handle different transfer types
@@ -876,21 +875,26 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
                setup.bm_request_type, setup.b_request, setup.w_value, setup.w_index);
         printf("Control transfer: wLength=%u\n", wLength);
         
-        // Set the buffer size to match what's expected in the control setup
+        // Set the buffer size to match the wLength in the setup packet
         buffer_size = wLength;
         
-        // For control IN transfers, we submit an empty buffer
-        if (true) {
-            printf("Control IN transfer, using dummy buffer\n");
-            // Keep using the dummy buffer with zero length
+        if (IS_XFERIN(transfer)) {
+            // For control IN transfers, submit an empty buffer
+            printf("Control IN transfer\n");
+            submit_data.ptr = &dummy_buffer;
+            submit_data.len = 0;
         } else {
-            // For control OUT, use data after the setup packet if available
+            // For control OUT, use data after the setup packet
+            printf("Control OUT transfer\n");
             if (transfer->length > LIBUSB_CONTROL_SETUP_SIZE) {
                 submit_data.ptr = transfer->buffer + LIBUSB_CONTROL_SETUP_SIZE;
                 submit_data.len = transfer->length - LIBUSB_CONTROL_SETUP_SIZE;
                 if (submit_data.len > wLength) {
                     submit_data.len = wLength;
                 }
+            } else {
+                submit_data.ptr = &dummy_buffer;
+                submit_data.len = 0;
             }
         }
     } else {
@@ -909,7 +913,7 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
             return LIBUSB_ERROR_INVALID_PARAM;
         }
         
-        // For non-control transfers, data is the entire buffer if it exists
+        // For non-control transfers, submit the entire buffer
         if (buffer_size > 0 && transfer->buffer != NULL) {
             submit_data.ptr = transfer->buffer;
             submit_data.len = buffer_size;
@@ -926,7 +930,7 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
         return libusb_error_from_wasi(err);
     }
     
-    // Store transfer handle in private data
+    // Store transfer handle
     tpriv->transfer = wasm_transfer;
     
     // Submit the transfer
@@ -941,21 +945,21 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
         return libusb_error_from_wasi(submit_err);
     }
     
+    printf("Transfer submitted successfully\n");
+    
     // Mark the transfer as in flight
     itransfer->state_flags |= USBI_TRANSFER_IN_FLIGHT;
     
-    // Await the transfer completion (blocking behavior)
-    cguest_list_u8_t result;
+    // Wait for the transfer to complete
+    cguest_list_u8_t result = {NULL, 0};
     component_usb_transfers_libusb_error_t await_err;
-
-    printf("DEBUG: Awaiting transfer for bmRequestType=0x%02x, bRequest=0x%02x, wValue=0x%04x, wIndex=0x%04x, wLength=%u\n",
-           setup.bm_request_type, setup.b_request, setup.w_value, setup.w_index, buffer_size);
+    
+    printf("Awaiting transfer completion...\n");
     
     if (!component_usb_transfers_await_transfer(wasm_transfer, &result, &await_err)) {
         // Transfer failed
         printf("Transfer failed: %d\n", await_err);
         
-        // Handle the error
         if (await_err == COMPONENT_USB_ERRORS_LIBUSB_ERROR_TIMEOUT) {
             itransfer->state_flags |= USBI_TRANSFER_TIMED_OUT;
             usbi_handle_transfer_completion(itransfer, LIBUSB_TRANSFER_TIMED_OUT);
@@ -963,69 +967,93 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
             usbi_handle_transfer_completion(itransfer, LIBUSB_TRANSFER_ERROR);
         }
         
-        return LIBUSB_SUCCESS; // Return success since we handled the error
+        return LIBUSB_SUCCESS; // We handled the error
     }
     
     // Process successful transfer
-    printf("DEBUG: Transfer awaited. await_err=%d, result.len=%zu\n", await_err, result.len);
+    printf("Transfer completed, received %zu bytes\n", result.len);
+    
+    // Debug log received data
+    if (result.ptr && result.len > 0) {
+        printf("Received data: ");
+        for (size_t i = 0; i < result.len && i < 32; i++) {
+            printf("%02x ", result.ptr[i]);
+        }
+        printf("\n");
+    }
+    
+    // Handle the transfer based on type and direction
     if (true) {
-		printf("Processing IN transfer\n");
-		//printing result
-		printf("Received %zu bytes in transfer\n", result.len);
-        // Only copy data if we have a valid result buffer
-        if (result.ptr && result.len > 0) {
-            if (transfer->type == LIBUSB_TRANSFER_TYPE_CONTROL) {
-                // For control IN transfers, copy result after setup packet
-                printf("Received %zu bytes in control transfer\n", result.len);
-                
-                // Calculate safe amount to copy
-                size_t max_copy = transfer->length - LIBUSB_CONTROL_SETUP_SIZE;
-                size_t to_copy = (result.len <= max_copy) ? result.len : max_copy;
-                
-                if (to_copy > 0) {
-                    memcpy(transfer->buffer + LIBUSB_CONTROL_SETUP_SIZE, result.ptr, to_copy);
-                    transfer->actual_length = LIBUSB_CONTROL_SETUP_SIZE + to_copy;
+        if (transfer->type == LIBUSB_TRANSFER_TYPE_CONTROL) {
+            // For control IN transfers
+            if (result.ptr && result.len > 0) {
+                // Important: For control transfers, we only copy the result data
+                // to the buffer after the setup packet. We DO NOT touch the setup packet.
+                if (transfer->length >= LIBUSB_CONTROL_SETUP_SIZE + result.len) {
+                    // Buffer is large enough for the data
+                    memcpy(transfer->buffer + LIBUSB_CONTROL_SETUP_SIZE, result.ptr, result.len);
+                    
+                    // Set actual_length to exactly the data length (not including setup packet)
+                    // For control transfers, libusb expects just the result length, not setup packet length
+                    transfer->actual_length = result.len;
+                    
+                    printf("Control IN: copied %zu bytes after setup packet, actual_length=%d\n", 
+                          result.len, transfer->actual_length);
                 } else {
-                    transfer->actual_length = LIBUSB_CONTROL_SETUP_SIZE;
+                    // Buffer is too small, copy what we can
+                    size_t to_copy = transfer->length - LIBUSB_CONTROL_SETUP_SIZE;
+                    if (to_copy > 0) {
+                        memcpy(transfer->buffer + LIBUSB_CONTROL_SETUP_SIZE, result.ptr, to_copy);
+                        transfer->actual_length = to_copy;
+                        printf("Control IN: buffer too small, copied %zu bytes, actual_length=%d\n", 
+                              to_copy, transfer->actual_length);
+                    } else {
+                        // No space after setup packet
+                        transfer->actual_length = 0;
+                    }
                 }
             } else {
-                // For non-control IN transfers
-                printf("Received %zu bytes in transfer\n", result.len);
-                
-                size_t to_copy = (result.len <= transfer->length) ? result.len : transfer->length;
-                
-                if (to_copy > 0) {
-                    memcpy(transfer->buffer, result.ptr, to_copy);
-                    transfer->actual_length = to_copy;
-                } else {
-                    transfer->actual_length = 0;
-                }
+                // No data received
+                transfer->actual_length = 0;
+                printf("Control IN: no data received, actual_length=0\n");
             }
         } else {
-            // No data received
-            if (transfer->type == LIBUSB_TRANSFER_TYPE_CONTROL) {
-                transfer->actual_length = LIBUSB_CONTROL_SETUP_SIZE;
+            // For non-control IN transfers (bulk, interrupt, iso)
+            if (result.ptr && result.len > 0) {
+                // Copy as much as will fit in the buffer
+                size_t to_copy = (result.len <= transfer->length) ? result.len : transfer->length;
+                memcpy(transfer->buffer, result.ptr, to_copy);
+                transfer->actual_length = to_copy;
+                printf("Non-control IN: copied %zu bytes, actual_length=%d\n", 
+                      to_copy, transfer->actual_length);
             } else {
+                // No data received
                 transfer->actual_length = 0;
+                printf("Non-control IN: no data received, actual_length=0\n");
             }
         }
     } else {
-        // For OUT transfers, set actual_length to submitted length
-        transfer->actual_length = transfer->length;
+        // For OUT transfers
+        if (transfer->type == LIBUSB_TRANSFER_TYPE_CONTROL) {
+            // Control OUT transfers include the setup packet in the count
+            transfer->actual_length = result.len;
+        } else {
+            // Non-control OUT transfers
+            transfer->actual_length = result.len;
+        }
+        printf("OUT transfer: actual_length=%d\n", transfer->actual_length);
     }
-
-    printf("Transfer completed successfully, actual length: %d\n", transfer->actual_length);
     
-    // Free the result data using a safer approach
-    if (result.ptr != NULL) {
-        // Make a local copy of the pointer to avoid any double-free issues
+    // Set the transferred bytes count in the internal transfer struct
+    itransfer->transferred = transfer->actual_length;
+    
+    // Free the result data safely
+    if (result.ptr) {
         void *ptr_to_free = result.ptr;
-        result.ptr = NULL; // Clear the pointer first
-        //free(ptr_to_free); // Then free the memory
+        result.ptr = NULL;  // Clear first to avoid double-free issues
+        free(ptr_to_free);
     }
     
-    printf("Transfer submitted successfully, buffer size: %zu\n", buffer_size); 
-
     // Mark transfer as completed
     tpriv->completed = 1;
     
