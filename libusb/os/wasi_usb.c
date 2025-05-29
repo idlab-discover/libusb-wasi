@@ -981,6 +981,7 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
         uint16_t wLength = libusb_le16_to_cpu(ctrl->wLength);
         
         setup.bm_request_type = ctrl->bmRequestType;
+        transfer->endpoint = ctrl->bmRequestType;
         setup.b_request = ctrl->bRequest;
         setup.w_value = libusb_le16_to_cpu(ctrl->wValue);
         setup.w_index = libusb_le16_to_cpu(ctrl->wIndex);
