@@ -5,7 +5,12 @@ AM_CXXFLAGS += -fvisibility=hidden $(THREAD_CFLAGS)
 
 lib_LTLIBRARIES = libusb-1.0.la
 
+if OS_WASI
 POSIX_PLATFORM_SRC = ""
+else
+POSIX_PLATFORM_SRC = os/events_posix.h os/events_posix.c \
+		     os/threads_posix.h os/threads_posix.c
+endif
 WINDOWS_PLATFORM_SRC = os/events_windows.h os/events_windows.c \
 		       os/threads_windows.h os/threads_windows.c
 
