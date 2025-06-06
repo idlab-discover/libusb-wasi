@@ -304,9 +304,6 @@ static int wasm_get_active_config_descriptor(struct libusb_device *dev, void *bu
         return libusb_error_from_wasi(err);
     }
 
-    printf("Active configuration descriptor: total_length=%u, num_interfaces=%u\n", 
-           config_desc.total_length, config_desc.interfaces.len);
-
     // Check if buffer is too small - but continue with partial copy instead of returning error
     if (len < config_desc.total_length) {
         usbi_dbg(ctx, "Buffer too small for active config descriptor (need %u, have %zu) - will do partial copy",
@@ -422,9 +419,6 @@ static int wasm_get_active_config_descriptor(struct libusb_device *dev, void *bu
     // Calculate how many bytes we actually filled in
     size_t filled_length = ptr - (uint8_t *)buffer;
     
-    printf("Filled %zu bytes of active configuration descriptor (requested buffer size: %zu)\n", 
-           filled_length, len);
-    
     // Free the descriptor resources that were allocated by the component
     component_usb_descriptors_configuration_descriptor_free(&config_desc);
     
@@ -444,12 +438,9 @@ static int wasm_get_config_descriptor(struct libusb_device *dev, uint8_t config_
 
     if (!component_usb_device_method_usb_device_get_configuration_descriptor(
             borrowed_device, config_index, &config_desc, &err)) {
-        printf("Failed to get configuration descriptor: %d\n", err);
+        
         return libusb_error_from_wasi(err);
     }
-
-    printf("Configuration descriptor: total_length=%u, num_interfaces=%u\n", 
-           config_desc.total_length, config_desc.interfaces.len);
 
     // Check if buffer is too small - but continue with partial copy instead of returning error
     if (len < config_desc.total_length) {
@@ -566,7 +557,7 @@ static int wasm_get_config_descriptor(struct libusb_device *dev, uint8_t config_
     // Calculate how many bytes we actually filled in
     size_t filled_length = ptr - (uint8_t *)buffer;
     
-    printf("Filled %zu bytes of configuration descriptor (requested buffer size: %zu)\n", filled_length, len);
+    
     
     // Free the descriptor resources that were allocated by the component
     component_usb_descriptors_configuration_descriptor_free(&config_desc);
@@ -587,12 +578,9 @@ static int wasm_get_config_descriptor_by_value(struct libusb_device *dev, uint8_
 
     if (!component_usb_device_method_usb_device_get_configuration_descriptor_by_value(
             borrowed_device, config_value, &config_desc, &err)) {
-        printf("Failed to get configuration descriptor by value: %d\n", err);
+        
         return libusb_error_from_wasi(err);
     }
-
-    printf("Config descriptor by value: total_length=%u, num_interfaces=%u\n", 
-           config_desc.total_length, config_desc.interfaces.len);
 
     // Allocate a buffer large enough for the entire descriptor
     *buffer = calloc(1, config_desc.total_length);
@@ -673,7 +661,7 @@ static int wasm_get_config_descriptor_by_value(struct libusb_device *dev, uint8_
     // Calculate how many bytes we actually filled in
     size_t filled_length = ptr - (uint8_t *)*buffer;
     
-    printf("Filled %zu bytes of configuration descriptor by value\n", filled_length);
+    
     
     // Free the descriptor resources that were allocated by the component
     component_usb_descriptors_configuration_descriptor_free(&config_desc);
@@ -758,8 +746,6 @@ static int wasm_release_interface(struct libusb_device_handle *handle, uint8_t i
 
 static int wasm_set_interface_altsetting(struct libusb_device_handle *handle,
                                         uint8_t interface_number, uint8_t altsetting) {
-	printf("Setting interface %d altsetting %d in WASM backend\n",
-            interface_number, altsetting);
     struct libusb_context *ctx = HANDLE_CTX(handle);
     wasi_device_handle_priv_t *hpriv = get_handle_priv(handle);
 
@@ -873,8 +859,6 @@ static int wasm_attach_kernel_driver(struct libusb_device_handle *handle, uint8_
 // ---------------------------------------------------------------------------
 static int wasm_alloc_streams(struct libusb_device_handle *handle, uint32_t num_streams,
                              unsigned char *endpoints, int num_endpoints) {
-	printf("Allocating %u streams for %d endpoints in WASM backend\n",
-            num_streams, num_endpoints);
     struct libusb_context *ctx = HANDLE_CTX(handle);
     wasi_device_handle_priv_t *hpriv = get_handle_priv(handle);
 
@@ -938,9 +922,6 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
     tpriv->buffer_size = 0;
     tpriv->completed = 0;
     tpriv->canceled = 0;
-    
-    printf("Transfer type: %d, length: %u, endpoint: 0x%02x\n",
-           transfer->type, transfer->length, transfer->endpoint);
     
     // Validate the transfer
     if (!transfer->buffer && transfer->length > 0) {
@@ -1095,17 +1076,12 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
                     // Set actual_length to exactly the data length (not including setup packet)
                     // For control transfers, libusb expects just the result length, not setup packet length
                     transfer->actual_length = result.len;
-                    
-                    printf("Control IN: copied %zu bytes after setup packet, actual_length=%d\n", 
-                          result.len, transfer->actual_length);
                 } else {
                     // Buffer is too small, copy what we can
                     size_t to_copy = transfer->length - LIBUSB_CONTROL_SETUP_SIZE;
                     if (to_copy > 0) {
                         memcpy(transfer->buffer + LIBUSB_CONTROL_SETUP_SIZE, result.ptr, to_copy);
                         transfer->actual_length = to_copy;
-                        printf("Control IN: buffer too small, copied %zu bytes, actual_length=%d\n", 
-                              to_copy, transfer->actual_length);
                     } else {
                         // No space after setup packet
                         transfer->actual_length = 0;
@@ -1122,8 +1098,6 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
                 size_t to_copy = (result.len <= transfer->length) ? result.len : transfer->length;
                 memcpy(transfer->buffer, result.ptr, to_copy);
                 transfer->actual_length = to_copy;
-                printf("Non-control IN: copied %zu bytes, actual_length=%d\n", 
-                      to_copy, transfer->actual_length);
             } else {
                 // No data received
                 transfer->actual_length = 0;
