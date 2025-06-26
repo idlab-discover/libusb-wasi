@@ -1,5 +1,7 @@
 # Building libusb for WASI
 
+!!! The current implemetation only works for synchronous transfers as workaround have been used, this is because there is at time of writing no standard way spawning seperate threads for WASI/Wasmtime. !!!
+
 Compiling `libusb` for use in WASI requires setting up the environment with the appropriate compiler and toolchain paths. The compiler and archiving tools are configured using environment variables:
 
 ```sh
