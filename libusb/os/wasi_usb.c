@@ -2,8 +2,6 @@
 // Created by Robbe Leroy on 24/05/2025.
 //
 // wasm_backend.c
-// This implementation is not yet ready to merge upstream. It uses some hacky workarounds to enable synchronous USB operation. As WASI/Wasm does not provide standardized functions to create new threads, these hacky workarounds circumvent this by blocking the main thread in wasm_sbumit_transfer 'till the transfer is completed instead of doing this by handling the events.
-// If multiple concurrent transfers are needed, the underlying WASI interface can be used as these support multiple concurrent transfers.
 
 #include <stdio.h>
 #include <stdlib.h>
