@@ -92,35 +92,3 @@ To verify the output is a valid WebAssembly component:
 file program.wasm
 # Output: WWebAssembly (wasm) binary module version 0x1000d
 ```
-
-## Legacy: Compiling for WASI Preview 1 (with Preview 2 Adaptation)
-
-If you are using an older toolchain or require a workflow that starts with a WASI Preview 1 (p1) module, you can compile for `wasip1` and then adapt it to a Preview 2 component using `wasm-tools`.
-
-### 1. Compile to WASI Preview 1
-
-Use the `wasm32-wasip1` target to create a legacy `.wasm` module:
-
-```sh
-clang --target=wasm32-wasip1 \
-  --sysroot=$WASI_SDK_PATH/share/wasi-sysroot \
-  -I./libusb \
-  -mexec-model=reactor \
-  /path/to/your/program.c \
-  ./libusb-wasi.a \
-  -o program_p1.wasm
-
-```
-
-### 2. Adapt to WASI Preview 2
-
-Since modern runtimes expect the Component Model format, you must wrap the p1 module using an adapter:
-
-```sh
-wasm-tools component new program_p1.wasm \
-  --adapt helper/wasi_snapshot_preview1.reactor.wasm \
-  -o adapted_p2.wasm
-
-```
-
-> **Note:** This method is considered deprecated in favor of the direct `wasm32-wasip2` compilation shown above, as it relies on an external adapter module (`wasi_snapshot_preview1.wasm`) to bridge the syscalls.
