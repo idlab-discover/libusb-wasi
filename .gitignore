@@ -83,3 +83,11 @@ build/
 tags
 cscope.out
 .idea/
+
+# ── Debug Logs & Artifacts ───────────────────────────────────────────────────
+*.log
+*.csv
+*.out
+perf.data*
+flamegraph.svg
+build_errors*.txt
