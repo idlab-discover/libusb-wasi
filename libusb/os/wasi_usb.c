@@ -970,7 +970,9 @@ static int wasm_submit_transfer(struct usbi_transfer *itransfer) {
         // Set the buffer size to match the wLength in the setup packet
         buffer_size = wLength;
         
-        if (true) {
+        // Direction bit 7 of bmRequestType: 1 = device-to-host (IN), 0 = host-to-device (OUT)
+        int direction_in = (ctrl->bmRequestType & 0x80) != 0;
+        if (direction_in) {
             // For control IN transfers, submit an empty buffer
                         submit_data.ptr = &dummy_buffer;
             submit_data.len = 0;
